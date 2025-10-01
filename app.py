@@ -66,7 +66,7 @@ def render_latex():
 
             if output_format == 'svg':
                 output_file_path = os.path.join(temp_dir, 'output.svg')
-                subprocess.run(['pdftocairo', '-svg', '-notext', pdf_file_path, output_file_path], check=True, timeout=15)
+                subprocess.run(['pdftocairo', '-svg',  pdf_file_path, output_file_path], check=True, timeout=15)
                 mimetype = 'image/svg+xml'
                 with open(output_file_path, 'r', encoding='utf-8') as f:
                     content = f.read()
