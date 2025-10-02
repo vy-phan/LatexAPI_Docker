@@ -1,61 +1,34 @@
-# Dockerfile cho LaTeX Rendering Service (Python + Flask)
+# Sử dụng Python image chính thức, phiên bản 3.10-slim
+FROM python:3.10-slim-bullseye
 
-# Giai đoạn 1: Builder - Cài đặt tất cả dependencies
-FROM python:3.10-slim-bullseye AS builder
-
-# Thiết lập biến môi trường
+# Thiết lập biến môi trường để tránh lỗi và giúp log tốt hơn
 ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=off \
-    PIP_DISABLE_PIP_VERSION_CHECK=on \
-    PIP_DEFAULT_TIMEOUT=100
+    PIP_DISABLE_PIP_VERSION_CHECK=on
 
-# Cài đặt TeX Live và các công cụ cần thiết
-# Sử dụng texlive-latex-extra và texlive-fonts-extra để có các gói phổ biến
+# Cài đặt các công cụ hệ thống cần thiết (LaTeX và Poppler)
+# Chạy tất cả trong một lớp để tối ưu
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    texlive-latex-extra \
-    texlive-fonts-extra \
-    texlive-luatex \
+    texlive-full \
     poppler-utils \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# Thiết lập thư mục làm việc
+# Thiết lập thư mục làm việc bên trong container
 WORKDIR /app
 
-# Cài đặt Python dependencies
+# Copy file requirements trước để tận dụng Docker cache
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
 
-# =========================================================================
-# Giai đoạn 2: Final - Image cuối cùng, nhẹ hơn
-# =========================================================================
-FROM python:3.10-slim-bullseye
+# Cài đặt các thư viện Python
+RUN pip install -r requirements.txt
 
-# Thiết lập biến môi trường
-ENV DEBIAN_FRONTEND=noninteractive \
-    PYTHONUNBUFFERED=1
+# Copy toàn bộ source code của ứng dụng vào thư mục làm việc
+COPY . .
 
-# Cài đặt các thư viện hệ thống tối thiểu cần thiết để chạy
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    libpoppler-cpp0v5 \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
-
-WORKDIR /app
-
-# Copy các file thực thi và thư viện đã được cài đặt từ giai đoạn builder
-COPY --from=builder /usr/lib/ /usr/lib/
-COPY --from=builder /usr/share/texlive /usr/share/texlive
-COPY --from=builder /usr/local/bin/ /usr/local/bin/
-COPY --from=builder /usr/bin/lualatex /usr/bin/lualatex
-COPY --from=builder /usr/bin/pdftocairo /usr/bin/pdftocairo
-COPY --from=builder /app /app
-
-# Copy source code ứng dụng (đã được copy trong bước trên nhưng copy lại để chắc chắn)
-COPY app.py ./
-COPY scheduler.py ./
-
+# Mở cổng 5000 để Render có thể kết nối vào
 EXPOSE 5000
 
-# Chạy ứng dụng bằng Gunicorn
+# Lệnh để khởi động server Gunicorn khi container chạy
 CMD ["gunicorn", "--workers", "2", "--threads", "4", "--timeout", "120", "--bind", "0.0.0.0:5000", "app:app"]
