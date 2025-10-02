@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, send_file
+from flask import Flask, request, jsonify
 from flask_cors import CORS
 import subprocess
 import tempfile
@@ -7,11 +7,55 @@ import shutil
 import base64
 import logging
 
+# Chỉ import nếu file scheduler tồn tại để tránh lỗi
+try:
+    from scheduler import start_keep_alive_job
+    SCHEDULER_ENABLED = True
+except ImportError:
+    SCHEDULER_ENABLED = False
+
 # Cấu hình logging cơ bản
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.INFO, format='[%(asctime)s] [%(levelname)s] %(message)s')
 
 app = Flask(__name__)
-CORS(app)
+
+# =================================================================
+# CẤU HÌNH CORS
+# =================================================================
+allowed_origins = [
+    "http://localhost:5173",
+    "https://trolytoanai.edu.vn" 
+    # Thêm các URL frontend khác của bạn ở đây nếu cần
+]
+CORS(app, resources={r"/*": {"origins": allowed_origins}})
+
+
+# =================================================================
+# KHỞI ĐỘNG CRON JOB (Chỉ khi có thể import scheduler)
+# =================================================================
+if SCHEDULER_ENABLED:
+    # Ưu tiên biến môi trường RENDER_EXTERNAL_URL do Render cung cấp
+    PING_URL =  os.environ.get('RENDER_EXTERNAL_URL')
+    IS_PRODUCTION = bool(PING_URL) # Cách đơn giản để biết đang ở trên Render
+
+    if IS_PRODUCTION:
+        # Trên môi trường Render, ping URL công khai
+        app.logger.info(f"Production environment detected. Setting up keep-alive for {PING_URL}")
+        start_keep_alive_job(PING_URL)
+    else:
+        # Nếu không có RENDER_EXTERNAL_URL, ta giả định là đang chạy local
+        # Sẽ được khởi động trong khối __main__ để không chạy khi Gunicorn import
+        pass 
+else:
+    app.logger.warning("scheduler.py not found or has an error. Keep-alive job is disabled.")
+
+
+# =================================================================
+# CÁC ROUTE CỦA ỨNG DỤNG
+# =================================================================
+@app.route('/')
+def health_check():
+    return jsonify({"success": True, "message": "LaTeX Rendering Service is running."})
 
 @app.route('/render', methods=['POST'])
 def render_latex():
@@ -107,4 +151,10 @@ def render_latex():
             return jsonify({"success": False, "message": str(e)}), 500
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)
+    PORT = int(os.environ.get('PORT', 5000))
+    if SCHEDULER_ENABLED:
+        local_ping_url = f"http://localhost:{PORT}/"
+        app.logger.info(f"Running in development mode. Starting keep-alive job to ping {local_ping_url}")
+        start_keep_alive_job(local_ping_url)
+    
+    app.run(host='0.0.0.0', port=PORT, debug=True)
