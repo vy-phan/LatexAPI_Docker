@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
 import subprocess
 import tempfile
@@ -24,31 +24,25 @@ app = Flask(__name__)
 # =================================================================
 allowed_origins = [
     "http://localhost:5173",
-    "https://trolytoanai.edu.vn" 
-    # Thêm các URL frontend khác của bạn ở đây nếu cần
+    "https://trolytoanai.edu.vn"
 ]
 CORS(app, resources={r"/*": {"origins": allowed_origins}})
 
-
 # =================================================================
-# KHỞI ĐỘNG CRON JOB (Chỉ khi có thể import scheduler)
+# KHỞI ĐỘNG CRON JOB
 # =================================================================
 if SCHEDULER_ENABLED:
-    # Ưu tiên biến môi trường RENDER_EXTERNAL_URL do Render cung cấp
-    PING_URL =  os.environ.get('RENDER_EXTERNAL_URL')
-    IS_PRODUCTION = bool(PING_URL) # Cách đơn giản để biết đang ở trên Render
-
-    if IS_PRODUCTION:
-        # Trên môi trường Render, ping URL công khai
-        app.logger.info(f"Production environment detected. Setting up keep-alive for {PING_URL}")
-        start_keep_alive_job(PING_URL)
+    PING_URL = os.environ.get('RENDER_EXTERNAL_URL')
+    
+    if PING_URL:
+        # Ping vào endpoint health check "/"
+        health_check_url = PING_URL.rstrip('/') + '/'
+        app.logger.info(f"Production environment detected. Setting up keep-alive for {health_check_url}")
+        start_keep_alive_job(health_check_url)
     else:
-        # Nếu không có RENDER_EXTERNAL_URL, ta giả định là đang chạy local
-        # Sẽ được khởi động trong khối __main__ để không chạy khi Gunicorn import
-        pass 
+        app.logger.info("Development environment detected. Keep-alive job will be started with the main app.")
 else:
     app.logger.warning("scheduler.py not found or has an error. Keep-alive job is disabled.")
-
 
 # =================================================================
 # CÁC ROUTE CỦA ỨNG DỤNG
@@ -73,14 +67,21 @@ def render_latex():
         try:
             full_tex_document = f"""
 \\documentclass[tikz,border=5pt]{{standalone}}
-% --- Các gói phổ biến cho Toán & Vật Lý ---
+% --- Hỗ trợ tiếng Việt (Unicode) ---
 \\usepackage[utf8]{{inputenc}}
+\\usepackage{{fontspec}}
+\\usepackage[vietnamese]{{babel}}
+% --- Các gói toán học và đồ họa ---
 \\usepackage{{amsmath, amsfonts, amssymb}}
 \\usepackage{{tikz}}
 \\usepackage{{tkz-tab}}
 \\usepackage{{pgfplots}}
-\\pgfplotsset{{compat=1.17}}
-\\usetikzlibrary{{calc, intersections}}
+\\pgfplotsset{{
+    compat=1.17,
+    restrict y to domain=-1000:1000,
+    restrict x to domain=-1000:1000
+}}
+\\usetikzlibrary{{calc, intersections, pin}}
 
 \\begin{{document}}
 {latex_code}
@@ -96,21 +97,21 @@ def render_latex():
             
             app.logger.info(f"Created temp tex file at {tex_file_path}")
 
-            # Bước 1: Chạy pdflatex
-            # Cải tiến: Tăng timeout và bắt cả stdout/stderr
-            pdflatex_process = subprocess.run(
-                ['pdflatex', '-interaction=nonstopmode', '-output-directory', temp_dir, tex_file_path],
-                check=True, timeout=30, # Tăng timeout lên 30 giây
-                capture_output=True, text=True # Bắt output để debug
+            # Bước 1: Chuyển sang dùng trình biên dịch 'lualatex'
+            process = subprocess.run(
+                ['lualatex', '-interaction=nonstopmode', '-output-directory', temp_dir, tex_file_path],
+                check=True, timeout=30,
+                capture_output=True, text=True, encoding='utf-8'
             )
-            app.logger.info("pdflatex completed successfully.")
+            app.logger.info("lualatex completed successfully.")
 
+            # Sửa lỗi copy-paste
             if not os.path.exists(pdf_file_path):
-                 raise FileNotFoundError(f"PDF file not created. pdflatex stdout: {pdflatex_process.stdout}")
+                 raise FileNotFoundError(f"PDF file not created. lualatex stdout: {process.stdout}")
 
             if output_format == 'svg':
                 output_file_path = os.path.join(temp_dir, 'output.svg')
-                subprocess.run(['pdftocairo', '-svg',  pdf_file_path, output_file_path], check=True, timeout=15)
+                subprocess.run(['pdftocairo', '-svg', pdf_file_path, output_file_path], check=True, timeout=15)
                 mimetype = 'image/svg+xml'
                 with open(output_file_path, 'r', encoding='utf-8') as f:
                     content = f.read()
@@ -132,16 +133,9 @@ def render_latex():
             })
 
         except subprocess.CalledProcessError as e:
-            # Lỗi từ command-line, ưu tiên đọc stderr
-            log_details = f"Process failed with exit code {e.returncode}.\n"
-            log_details += f"Stderr: {e.stderr}\n"
-            log_details += f"Stdout: {e.stdout}"
+            log_details = f"Process failed with exit code {e.returncode}.\nStderr: {e.stderr}\nStdout: {e.stdout}"
             app.logger.error(f"LaTeX compilation failed: {log_details}")
-            return jsonify({
-                "success": False, 
-                "message": "LaTeX compilation failed.",
-                "details": log_details
-            }), 500
+            return jsonify({"success": False, "message": "LaTeX compilation failed.", "details": log_details}), 500
         except subprocess.TimeoutExpired as e:
             error_msg = f"Process timed out after {e.timeout} seconds."
             app.logger.error(error_msg)
@@ -150,6 +144,7 @@ def render_latex():
             app.logger.error(f"An unexpected error occurred: {str(e)}")
             return jsonify({"success": False, "message": str(e)}), 500
 
+# Khối này chỉ chạy khi bạn thực thi `python app.py`
 if __name__ == '__main__':
     PORT = int(os.environ.get('PORT', 5000))
     if SCHEDULER_ENABLED:
