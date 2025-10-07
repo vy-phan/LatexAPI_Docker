@@ -15,6 +15,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     texlive-lang-other \
     # Các gói cho đồ họa và toán học
     texlive-pictures \
+    texlive-pstricks \
+    # <--- THÊM GÓI NÀY VÀO
     texlive-latex-extra \
     # Công cụ chuyển đổi PDF
     poppler-utils \
