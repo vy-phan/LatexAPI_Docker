@@ -100,7 +100,7 @@ def render_latex():
             # Bước 1: Chuyển sang dùng trình biên dịch 'lualatex'
             process = subprocess.run(
                 ['lualatex', '-interaction=nonstopmode', '-output-directory', temp_dir, tex_file_path],
-                check=True, timeout=30,
+                check=True, timeout=60,
                 capture_output=True, text=True, encoding='utf-8'
             )
             app.logger.info("lualatex completed successfully.")

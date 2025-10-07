@@ -1,34 +1,39 @@
 # Sử dụng Python image chính thức, phiên bản 3.10-slim
 FROM python:3.10-slim-bullseye
 
-# Thiết lập biến môi trường để tránh lỗi và giúp log tốt hơn
+# Thiết lập biến môi trường
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=off \
     PIP_DISABLE_PIP_VERSION_CHECK=on
 
-# Cài đặt các công cụ hệ thống cần thiết (LaTeX và Poppler)
-# Chạy tất cả trong một lớp để tối ưu
+# Cài đặt các gói LaTeX cần thiết thay vì texlive-full
+# và các công cụ hệ thống khác
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    texlive-full \
+    # Các gói LaTeX cốt lõi
+    texlive-luatex \
+    texlive-fonts-recommended \
+    texlive-lang-vietnamese \
+    # Các gói cho đồ họa và toán học
+    texlive-pictures \
+    texlive-latex-extra \
+    # Công cụ chuyển đổi PDF
     poppler-utils \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# Thiết lập thư mục làm việc bên trong container
+# Thiết lập thư mục làm việc
 WORKDIR /app
 
-# Copy file requirements trước để tận dụng Docker cache
+# Copy và cài đặt requirements
 COPY requirements.txt .
-
-# Cài đặt các thư viện Python
 RUN pip install -r requirements.txt
 
-# Copy toàn bộ source code của ứng dụng vào thư mục làm việc
+# Copy source code
 COPY . .
 
-# Mở cổng 5000 để Render có thể kết nối vào
+# Mở cổng 5000
 EXPOSE 5000
 
-# Lệnh để khởi động server Gunicorn khi container chạy
+# Lệnh khởi động server Gunicorn
 CMD ["gunicorn", "--workers", "2", "--threads", "4", "--timeout", "120", "--bind", "0.0.0.0:5000", "app:app"]
