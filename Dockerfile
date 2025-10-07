@@ -7,13 +7,12 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PIP_NO_CACHE_DIR=off \
     PIP_DISABLE_PIP_VERSION_CHECK=on
 
-# Cài đặt các gói LaTeX cần thiết thay vì texlive-full
-# và các công cụ hệ thống khác
+# Cài đặt các gói LaTeX cần thiết và các công cụ hệ thống khác
 RUN apt-get update && apt-get install -y --no-install-recommends \
     # Các gói LaTeX cốt lõi
     texlive-luatex \
     texlive-fonts-recommended \
-    texlive-lang-vietnamese \
+    texlive-lang-other \
     # Các gói cho đồ họa và toán học
     texlive-pictures \
     texlive-latex-extra \
