@@ -15,6 +15,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
+# ================================================================
+# === BƯỚC THÊM VÀO: Khởi tạo font cache của lualatex ===
+# Chạy một lần lualatex "nháp" để nó xây dựng cache font hệ thống.
+# Điều này giúp lần chạy thực tế đầu tiên (khi có request) nhanh hơn nhiều.
+RUN lualatex -interaction=nonstopmode -halt-on-error -output-directory=/tmp "\\documentclass{article}\\begin{document}Cache\\end{document}"
+# ================================================================
+
 # Thiết lập thư mục làm việc bên trong container
 WORKDIR /app
 

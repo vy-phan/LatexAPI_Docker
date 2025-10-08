@@ -100,7 +100,7 @@ def render_latex():
             # Bước 1: Chuyển sang dùng trình biên dịch 'lualatex'
             process = subprocess.run(
                 ['lualatex', '-interaction=nonstopmode', '-output-directory', temp_dir, tex_file_path],
-                check=True, timeout=30,
+                check=True, timeout=60,
                 capture_output=True, text=True, encoding='utf-8'
             )
             app.logger.info("lualatex completed successfully.")
@@ -111,13 +111,13 @@ def render_latex():
 
             if output_format == 'svg':
                 output_file_path = os.path.join(temp_dir, 'output.svg')
-                subprocess.run(['pdftocairo', '-svg', pdf_file_path, output_file_path], check=True, timeout=15)
+                subprocess.run(['pdftocairo', '-svg', pdf_file_path, output_file_path], check=True, timeout=60)
                 mimetype = 'image/svg+xml'
                 with open(output_file_path, 'r', encoding='utf-8') as f:
                     content = f.read()
             else: # format == 'png'
                 output_file_path = os.path.join(temp_dir, 'output.png')
-                subprocess.run(['pdftocairo', '-png', '-singlefile', '-r', '300', pdf_file_path, output_file_path], check=True, timeout=15)
+                subprocess.run(['pdftocairo', '-png', '-singlefile', '-r', '300', pdf_file_path, output_file_path], check=True, timeout=60)
                 mimetype = 'image/png'
                 with open(output_file_path, 'rb') as f:
                     content = base64.b64encode(f.read()).decode('utf-8')
