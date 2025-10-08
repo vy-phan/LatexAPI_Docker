@@ -1,50 +1,34 @@
-# Sử dụng Python image chính thức, phiên bản 3.10-slim-bookworm
-FROM python:3.10-slim-bookworm
+# Sử dụng Python image chính thức, phiên bản 3.10-slim
+FROM python:3.10-slim-bullseye
 
-# Thiết lập biến môi trường
+# Thiết lập biến môi trường để tránh lỗi và giúp log tốt hơn
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=off \
-    PIP_DISABLE_PIP_VERSION_CHECK=on \
-    TEXMFHOME=/root/texmf
+    PIP_DISABLE_PIP_VERSION_CHECK=on
 
-# Cài đặt các gói LaTeX cần thiết và công cụ hệ thống
+# Cài đặt các công cụ hệ thống cần thiết (LaTeX và Poppler)
+# Chạy tất cả trong một lớp để tối ưu
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    texlive-luatex \
-    texlive-xetex \
-    texlive-fonts-recommended \
-    texlive-fonts-extra \
-    texlive-lang-other \
-    texlive-pictures \
-    texlive-pstricks \
-    texlive-latex-extra \
-    texlive-science \
+    texlive-full \
     poppler-utils \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# Khởi tạo tlmgr và cài packages contrib với retry logic
-RUN mkdir -p /root/texmf && \
-    tlmgr init-usertree && \
-    (tlmgr repository set https://mirror.ctan.org/systems/texlive/tlnet && \
-     tlmgr install tkz-tab tkz-euclide tikz-3dplot || \
-     tlmgr repository set https://ctan.math.utah.edu/ctan/tex-archive/systems/texlive/tlnet && \
-     tlmgr install tkz-tab tkz-euclide tikz-3dplot || \
-     tlmgr repository set https://ctan.dcc.uchile.cl/systems/texlive/tlnet && \
-     tlmgr install tkz-tab tkz-euclide tikz-3dplot)
-
-# Thiết lập thư mục làm việc
+# Thiết lập thư mục làm việc bên trong container
 WORKDIR /app
 
-# Copy và cài đặt requirements
+# Copy file requirements trước để tận dụng Docker cache
 COPY requirements.txt .
+
+# Cài đặt các thư viện Python
 RUN pip install -r requirements.txt
 
-# Copy source code
+# Copy toàn bộ source code của ứng dụng vào thư mục làm việc
 COPY . .
 
-# Mở cổng 5000
+# Mở cổng 5000 để Render có thể kết nối vào
 EXPOSE 5000
 
-# Lệnh khởi động server Gunicorn
-CMD ["gunicorn", "--worker-class=gevent", "--workers", "2", "--threads", "4", "--timeout", "180", "--bind", "0.0.0.0:5000", "app:app"]
+# Lệnh để khởi động server Gunicorn khi container chạy
+CMD ["gunicorn", "--workers", "2", "--threads", "4", "--timeout", "120", "--bind", "0.0.0.0:5000", "app:app"]
