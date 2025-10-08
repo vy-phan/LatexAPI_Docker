@@ -1,41 +1,34 @@
-from flask import Flask, request, jsonify, send_file
+from flask import Flask, request, jsonify
 from flask_cors import CORS
 import subprocess
 import tempfile
 import os
-import shutil
 import base64
 import logging
+from retrying import retry
 
-# Chỉ import nếu file scheduler tồn tại để tránh lỗi
-try:
-    from scheduler import start_keep_alive_job
-    SCHEDULER_ENABLED = True
-except ImportError:
-    SCHEDULER_ENABLED = False
-
-# Cấu hình logging cơ bản
+# Cấu hình logging
 logging.basicConfig(level=logging.INFO, format='[%(asctime)s] [%(levelname)s] %(message)s')
 
 app = Flask(__name__)
 
-# =================================================================
-# CẤU HÌNH CORS
-# =================================================================
+# Cấu hình CORS
 allowed_origins = [
     "http://localhost:5173",
     "https://trolytoanai.edu.vn"
 ]
 CORS(app, resources={r"/*": {"origins": allowed_origins}})
 
-# =================================================================
-# KHỞI ĐỘNG CRON JOB
-# =================================================================
+# Khởi động cron job
+try:
+    from scheduler import start_keep_alive_job
+    SCHEDULER_ENABLED = True
+except ImportError:
+    SCHEDULER_ENABLED = False
+
 if SCHEDULER_ENABLED:
     PING_URL = os.environ.get('RENDER_EXTERNAL_URL')
-    
     if PING_URL:
-        # Ping vào endpoint health check "/"
         health_check_url = PING_URL.rstrip('/') + '/'
         app.logger.info(f"Production environment detected. Setting up keep-alive for {health_check_url}")
         start_keep_alive_job(health_check_url)
@@ -44,9 +37,6 @@ if SCHEDULER_ENABLED:
 else:
     app.logger.warning("scheduler.py not found or has an error. Keep-alive job is disabled.")
 
-# =================================================================
-# CÁC ROUTE CỦA ỨNG DỤNG
-# =================================================================
 @app.route('/')
 def health_check():
     return jsonify({"success": True, "message": "LaTeX Rendering Service is running."})
@@ -62,7 +52,18 @@ def render_latex():
 
     if output_format not in ['svg', 'png']:
         return jsonify({"success": False, "message": "Invalid format. Must be 'svg' or 'png'."}), 400
-    
+
+    # Validate LaTeX input
+    if 'tkzTab' in latex_code:
+        if 'tkzTabInit' not in latex_code:
+            latex_code = f"""
+            \\tkzTabInit[lgt=1,espcl=2]{{x /1 , f' /1 , f /1}}{{$-\infty$,0,$+\infty$}}
+            {latex_code}
+            """
+            app.logger.info("Auto-added tkzTabInit for variation table.")
+        elif 'tkzTabVar' not in latex_code:
+            return jsonify({"success": False, "message": "Invalid tkz-tab syntax: Missing \\tkzTabVar."}), 400
+
     with tempfile.TemporaryDirectory() as temp_dir:
         try:
             full_tex_document = f"""
@@ -70,25 +71,25 @@ def render_latex():
 % --- Hỗ trợ tiếng Việt (Unicode) ---
 \\usepackage[utf8]{{inputenc}}
 \\usepackage{{fontspec}}
-\\setmainfont{{DejaVu Sans}}  % Font hỗ trợ tiếng Việt tốt, có sẵn trong TeXLive
+\\setmainfont{{DejaVu Sans}}
 \\usepackage[vietnamese]{{babel}}
 % --- Các gói toán học và đồ họa ---
 \\usepackage{{amsmath, amsfonts, amssymb}}
 \\usepackage{{tikz}}
-\\usepackage{{tkz-tab}}  % Bảng biến thiên (hàm số, đạo hàm)
-\\usepackage{{tkz-euclide}}  % Hình học 2D: tam giác, đường tròn, parabol
-\\usepackage{{tikz-3dplot}}  % Hình học 3D: lăng trụ, chóp, mặt phẳng
+\\usepackage{{tkz-tab}}
+\\usepackage{{tkz-euclide}}
+\\usepackage{{tikz-3dplot}}
 \\usepackage{{pgfplots}}
 \\pgfplotsset{{
-    compat=1.18,  % Phiên bản mới, fix parsing errors
-    restrict y to domain=-1e6:1e6,  % Tăng range để hỗ trợ hàm lớn
+    compat=1.18,
+    restrict y to domain=-1e6:1e6,
     restrict x to domain=-1e6:1e6,
-    samples=200,  % Tăng độ mịn cho đồ thị
-    axis lines=middle,  % Trục Oxy chuẩn VN
-    grid=major,  % Grid cho đồ thị
-    ticklabel style={{font=\\small}}  % Nhãn nhỏ gọn
+    samples=200,
+    axis lines=middle,
+    grid=major,
+    ticklabel style={{font=\\small}}
 }}
-\\usetikzlibrary{{calc, intersections, 3d, perspective, arrows.meta}}  % Hỗ trợ 3D và arrows đẹp
+\\usetikzlibrary{{calc, intersections, 3d, perspective, arrows.meta}}
 \\begin{{document}}
 {latex_code}
 \\end{{document}}
@@ -103,27 +104,30 @@ def render_latex():
             
             app.logger.info(f"Created temp tex file at {tex_file_path}")
 
-            # Bước 1: Chuyển sang dùng trình biên dịch 'lualatex'
-            process = subprocess.run(
-                ['lualatex', '-interaction=nonstopmode', '-output-directory', temp_dir, tex_file_path],
-                check=True, timeout=180,
-                capture_output=True, text=True, encoding='utf-8'
-            )
+            # Retry lualatex nếu fail
+            @retry(stop_max_attempt_number=2, wait_fixed=1000)
+            def run_lualatex():
+                return subprocess.run(
+                    ['lualatex', '--shell-escape', '-interaction=nonstopmode', '-output-directory', temp_dir, tex_file_path],
+                    check=True, timeout=180,
+                    capture_output=True, text=True, encoding='utf-8'
+                )
+            
+            process = run_lualatex()
             app.logger.info("lualatex completed successfully.")
 
-            # Sửa lỗi copy-paste
             if not os.path.exists(pdf_file_path):
-                 raise FileNotFoundError(f"PDF file not created. lualatex stdout: {process.stdout}")
+                raise FileNotFoundError(f"PDF file not created. lualatex stdout: {process.stdout}")
 
             if output_format == 'svg':
                 output_file_path = os.path.join(temp_dir, 'output.svg')
-                subprocess.run(['pdftocairo', '-svg', pdf_file_path, output_file_path], check=True, timeout=15)
+                subprocess.run(['pdftocairo', '-svg', pdf_file_path, output_file_path], check=True, timeout=30)
                 mimetype = 'image/svg+xml'
                 with open(output_file_path, 'r', encoding='utf-8') as f:
                     content = f.read()
-            else: # format == 'png'
+            else:  # format == 'png'
                 output_file_path = os.path.join(temp_dir, 'output.png')
-                subprocess.run(['pdftocairo', '-png', '-singlefile', '-r', '300', pdf_file_path, output_file_path], check=True, timeout=15)
+                subprocess.run(['pdftocairo', '-png', '-singlefile', '-r', '300', pdf_file_path, output_file_path], check=True, timeout=30)
                 mimetype = 'image/png'
                 with open(output_file_path, 'rb') as f:
                     content = base64.b64encode(f.read()).decode('utf-8')
@@ -139,18 +143,17 @@ def render_latex():
             })
 
         except subprocess.CalledProcessError as e:
-            log_details = f"Process failed with exit code {e.returncode}.\nStderr: {e.stderr}\nStdout: {e.stdout}"
+            log_details = f"Process failed with exit code {e.returncode}.\nStderr: {e.stderr}\nStdout: {e.stdout}\nInput LaTeX: {latex_code}"
             app.logger.error(f"LaTeX compilation failed: {log_details}")
-            return jsonify({"success": False, "message": "LaTeX compilation failed.", "details": log_details}), 500
+            return jsonify({"success": False, "message": "LaTeX compilation failed. Check your LaTeX syntax.", "details": log_details}), 400
         except subprocess.TimeoutExpired as e:
-            error_msg = f"Process timed out after {e.timeout} seconds."
+            error_msg = f"Process timed out after {e.timeout} seconds. Try simplifying the LaTeX code."
             app.logger.error(error_msg)
             return jsonify({"success": False, "message": error_msg}), 500
         except Exception as e:
-            app.logger.error(f"An unexpected error occurred: {str(e)}")
-            return jsonify({"success": False, "message": str(e)}), 500
+            app.logger.error(f"An unexpected error occurred: {str(e)}\nInput LaTeX: {latex_code}")
+            return jsonify({"success": False, "message": f"Unexpected error: {str(e)}"}), 500
 
-# Khối này chỉ chạy khi bạn thực thi `python app.py`
 if __name__ == '__main__':
     PORT = int(os.environ.get('PORT', 5000))
     if SCHEDULER_ENABLED:

@@ -10,20 +10,19 @@ ENV DEBIAN_FRONTEND=noninteractive \
 # Cài đặt các gói LaTeX cần thiết và công cụ hệ thống
 RUN apt-get update && apt-get install -y --no-install-recommends \
     texlive-luatex \
-    texlive-xetex \ 
+    texlive-xetex \
     texlive-fonts-recommended \
-    texlive-fonts-extra \ 
-    texlive-lang-other \ 
-    texlive-pictures \  
+    texlive-fonts-extra \
+    texlive-lang-other \
+    texlive-pictures \
     texlive-pstricks \
     texlive-latex-extra \
-    texlive-science \  
-    texlive-math-extra \  
-    poppler-utils \ 
+    texlive-science \
+    poppler-utils \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# Cài đặt tlmgr và packages contrib (tkz-euclide, tikz-3dplot)
+# Cài đặt tlmgr và packages contrib
 RUN tlmgr update --self && \
     tlmgr install tkz-tab tkz-euclide tikz-3dplot
 
@@ -41,4 +40,4 @@ COPY . .
 EXPOSE 5000
 
 # Lệnh khởi động server Gunicorn
-CMD ["gunicorn", "--workers", "2", "--threads", "4", "--timeout", "180", "--bind", "0.0.0.0:5000", "app:app"]
+CMD ["gunicorn", "--worker-class=gevent", "--workers", "2", "--threads", "4", "--timeout", "180", "--bind", "0.0.0.0:5000", "app:app"]
