@@ -70,23 +70,29 @@ def render_latex():
 % --- Hỗ trợ tiếng Việt (Unicode) ---
 \\usepackage[utf8]{{inputenc}}
 \\usepackage{{fontspec}}
+\\setmainfont{{DejaVu Sans}}  % Font hỗ trợ tiếng Việt tốt, có sẵn trong TeXLive
 \\usepackage[vietnamese]{{babel}}
 % --- Các gói toán học và đồ họa ---
 \\usepackage{{amsmath, amsfonts, amssymb}}
 \\usepackage{{tikz}}
-\\usepackage{{tkz-tab}}
+\\usepackage{{tkz-tab}}  % Bảng biến thiên (hàm số, đạo hàm)
+\\usepackage{{tkz-euclide}}  % Hình học 2D: tam giác, đường tròn, parabol
+\\usepackage{{tikz-3dplot}}  % Hình học 3D: lăng trụ, chóp, mặt phẳng
 \\usepackage{{pgfplots}}
 \\pgfplotsset{{
-    compat=1.17,
-    restrict y to domain=-1000:1000,
-    restrict x to domain=-1000:1000
+    compat=1.18,  % Phiên bản mới, fix parsing errors
+    restrict y to domain=-1e6:1e6,  % Tăng range để hỗ trợ hàm lớn
+    restrict x to domain=-1e6:1e6,
+    samples=200,  % Tăng độ mịn cho đồ thị
+    axis lines=middle,  % Trục Oxy chuẩn VN
+    grid=major,  % Grid cho đồ thị
+    ticklabel style={{font=\\small}}  % Nhãn nhỏ gọn
 }}
-\\usetikzlibrary{{calc, intersections}}
-
+\\usetikzlibrary{{calc, intersections, 3d, perspective, arrows.meta}}  % Hỗ trợ 3D và arrows đẹp
 \\begin{{document}}
 {latex_code}
 \\end{{document}}
-            """
+"""
             
             base_name = 'input'
             tex_file_path = os.path.join(temp_dir, f'{base_name}.tex')
@@ -100,7 +106,7 @@ def render_latex():
             # Bước 1: Chuyển sang dùng trình biên dịch 'lualatex'
             process = subprocess.run(
                 ['lualatex', '-interaction=nonstopmode', '-output-directory', temp_dir, tex_file_path],
-                check=True, timeout=60,
+                check=True, timeout=180,
                 capture_output=True, text=True, encoding='utf-8'
             )
             app.logger.info("lualatex completed successfully.")

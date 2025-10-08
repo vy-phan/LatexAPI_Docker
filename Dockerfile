@@ -1,5 +1,5 @@
-# Sử dụng Python image chính thức, phiên bản 3.10-slim
-FROM python:3.10-slim-bullseye
+# Sử dụng Python image chính thức, phiên bản 3.10-slim-bookworm
+FROM python:3.10-slim-bookworm
 
 # Thiết lập biến môi trường
 ENV DEBIAN_FRONTEND=noninteractive \
@@ -7,21 +7,25 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PIP_NO_CACHE_DIR=off \
     PIP_DISABLE_PIP_VERSION_CHECK=on
 
-# Cài đặt các gói LaTeX cần thiết và các công cụ hệ thống khác
+# Cài đặt các gói LaTeX cần thiết và công cụ hệ thống
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    # Các gói LaTeX cốt lõi
     texlive-luatex \
+    texlive-xetex \ 
     texlive-fonts-recommended \
-    texlive-lang-other \
-    # Các gói cho đồ họa và toán học
-    texlive-pictures \
+    texlive-fonts-extra \ 
+    texlive-lang-other \ 
+    texlive-pictures \  
     texlive-pstricks \
-    # <--- THÊM GÓI NÀY VÀO
     texlive-latex-extra \
-    # Công cụ chuyển đổi PDF
-    poppler-utils \
+    texlive-science \  
+    texlive-math-extra \  
+    poppler-utils \ 
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
+
+# Cài đặt tlmgr và packages contrib (tkz-euclide, tikz-3dplot)
+RUN tlmgr update --self && \
+    tlmgr install tkz-tab tkz-euclide tikz-3dplot
 
 # Thiết lập thư mục làm việc
 WORKDIR /app
@@ -37,4 +41,4 @@ COPY . .
 EXPOSE 5000
 
 # Lệnh khởi động server Gunicorn
-CMD ["gunicorn", "--workers", "2", "--threads", "4", "--timeout", "120", "--bind", "0.0.0.0:5000", "app:app"]
+CMD ["gunicorn", "--workers", "2", "--threads", "4", "--timeout", "180", "--bind", "0.0.0.0:5000", "app:app"]
