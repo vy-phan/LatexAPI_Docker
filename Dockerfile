@@ -5,7 +5,8 @@ FROM python:3.10-slim-bookworm
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=off \
-    PIP_DISABLE_PIP_VERSION_CHECK=on
+    PIP_DISABLE_PIP_VERSION_CHECK=on \
+    TEXMFHOME=/root/texmf
 
 # Cài đặt các gói LaTeX cần thiết và công cụ hệ thống
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -22,8 +23,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# Cài đặt tlmgr và packages contrib
-RUN tlmgr update --self && \
+# Khởi tạo tlmgr user mode và cài packages contrib
+RUN mkdir -p /root/texmf && \
+    tlmgr init-usertree && \
     tlmgr install tkz-tab tkz-euclide tikz-3dplot
 
 # Thiết lập thư mục làm việc
