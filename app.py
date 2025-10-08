@@ -81,7 +81,7 @@ def render_latex():
     restrict y to domain=-1000:1000,
     restrict x to domain=-1000:1000
 }}
-\\usetikzlibrary{{calc, intersections, pin}}
+\\usetikzlibrary{{calc, intersections}}
 
 \\begin{{document}}
 {latex_code}
