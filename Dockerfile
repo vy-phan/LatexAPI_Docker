@@ -23,11 +23,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# Khởi tạo tlmgr user mode và cài packages contrib
+# Khởi tạo tlmgr và cài packages contrib với retry logic
 RUN mkdir -p /root/texmf && \
     tlmgr init-usertree && \
-    tlmgr --usermode repository set https://ctan.math.illinois.edu/systems/texlive/tlnet && \
-    tlmgr --usermode install tkz-tab tkz-euclide tikz-3dplot
+    (tlmgr repository set https://mirror.ctan.org/systems/texlive/tlnet && \
+     tlmgr install tkz-tab tkz-euclide tikz-3dplot || \
+     tlmgr repository set https://ctan.math.utah.edu/ctan/tex-archive/systems/texlive/tlnet && \
+     tlmgr install tkz-tab tkz-euclide tikz-3dplot || \
+     tlmgr repository set https://ctan.dcc.uchile.cl/systems/texlive/tlnet && \
+     tlmgr install tkz-tab tkz-euclide tikz-3dplot)
 
 # Thiết lập thư mục làm việc
 WORKDIR /app
